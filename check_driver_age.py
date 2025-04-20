@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 from datetime import datetime
 import pytz
 import logging
+import re
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -60,19 +61,33 @@ def check_driver_age():
         response.raise_for_status()
         soup = BeautifulSoup(response.text, "html.parser")
 
-        # Find the age element (adjust selector if needed)
-        age_element = soup.select_one("div.driver-info p:contains('Age')")
-        if age_element:
-            age_text = age_element.text
-            age = int(''.join(filter(str.isdigit, age_text)))
-            logging.info(f"Age found: {age}")
-
-            if age == 21:
-                send_email(age)
-                logging.info("Age is 21, email sent")
-                return True
+        # Find the age element
+        age_strong = soup.select_one("div#tmpl-detail-header-content-information strong:-soup-contains('Age')")
+        if age_strong:
+            # Get the parent div's text to include "Age : 20 years old"
+            parent_div = age_strong.find_parent("div")
+            if parent_div:
+                div_text = parent_div.get_text(strip=True)
+                logging.info(f"Raw div text: {div_text}")
+                # Extract age from text like "Age:20yearsold" (after stripping)
+                age_match = re.search(r"Age\s*:\s*(\d+)\s*years\s*old", div_text, re.IGNORECASE)
+                if age_match:
+                    age = int(age_match.group(1))
+                    logging.info(f"Age found: {age}")
+                    if age == 21:
+                        send_email(age)
+                        logging.info("Age is 21, email sent")
+                        return True
+                else:
+                    logging.warning("Age number not found in text")
+            else:
+                logging.warning("Parent div not found")
         else:
-            logging.warning("Age element not found")
+            logging.warning("Age strong element not found")
+            # Log nearby HTML for debugging
+            body = soup.find("body")
+            if body:
+                logging.debug(f"Body excerpt: {body.prettify()[:500]}")
     except Exception as e:
         logging.error(f"Error checking age: {e}")
     return False
